@@ -54,12 +54,17 @@ export function App() {
                 <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div>
+                <div class="flex-1">
                   <div class="font-bold text-lg">郵遞區號：{addressResult.bestMatch.zipcode}</div>
                   <div class="text-sm">
                     {addressResult.bestMatch.city} {addressResult.bestMatch.district} {addressResult.bestMatch.street}
                     {addressResult.bestMatch.scope && ` (${addressResult.bestMatch.scope})`}
                   </div>
+                  {addressResult.englishAddress && (
+                    <div class="text-sm mt-1 font-mono bg-success/20 px-2 py-1 rounded">
+                      {addressResult.englishAddress}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

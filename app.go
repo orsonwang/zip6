@@ -47,9 +47,10 @@ type AddressSearchResult struct {
 
 // AddressSearchResponse represents the response from address search
 type AddressSearchResponse struct {
-	ParsedAddress string                `json:"parsedAddress"`
-	Results       []AddressSearchResult `json:"results"`
-	BestMatch     *AddressSearchResult  `json:"bestMatch"`
+	ParsedAddress   string                `json:"parsedAddress"`
+	EnglishAddress  string                `json:"englishAddress"`
+	Results         []AddressSearchResult `json:"results"`
+	BestMatch       *AddressSearchResult  `json:"bestMatch"`
 }
 
 // NewApp creates a new App application struct
@@ -230,6 +231,9 @@ func (a *App) SearchByAddress(fullAddress string) AddressSearchResponse {
 	if parsed.Floor > 0 {
 		parsedDesc += fmt.Sprintf(" %d樓", parsed.Floor)
 	}
+	if parsed.Room > 0 {
+		parsedDesc += fmt.Sprintf("之%d", parsed.Room)
+	}
 
 	response := AddressSearchResponse{
 		ParsedAddress: parsedDesc,
@@ -252,6 +256,7 @@ func (a *App) SearchByAddress(fullAddress string) AddressSearchResponse {
 
 	// Match each record's scope against the parsed address
 	var bestMatch *AddressSearchResult
+	var bestMatchZipcode string
 	for _, r := range records {
 		scope := address.ParseScope(r.Scope)
 		matched := address.MatchAddress(parsed, scope)
@@ -267,12 +272,19 @@ func (a *App) SearchByAddress(fullAddress string) AddressSearchResponse {
 
 		if matched && bestMatch == nil {
 			bestMatch = &result
+			bestMatchZipcode = r.Zipcode
 		}
 
 		response.Results = append(response.Results, result)
 	}
 
 	response.BestMatch = bestMatch
+
+	// Generate English address if we have a best match
+	if bestMatch != nil {
+		translator := address.NewTranslator(a.db)
+		response.EnglishAddress = translator.TranslateAddress(parsed, bestMatchZipcode)
+	}
 
 	// Sort results: matched first, then by zipcode
 	matchedResults := []AddressSearchResult{}

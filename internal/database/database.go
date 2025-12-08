@@ -51,6 +51,30 @@ func InitDB(dbPath string) (*Database, error) {
 	CREATE INDEX IF NOT EXISTS idx_district ON zipcode(district);
 	CREATE INDEX IF NOT EXISTS idx_zipcode ON zipcode(zipcode);
 	CREATE INDEX IF NOT EXISTS idx_street ON zipcode(street);
+
+	-- English translation tables
+	CREATE TABLE IF NOT EXISTS street_en (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		chinese TEXT NOT NULL UNIQUE,
+		english TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_street_en_chinese ON street_en(chinese);
+
+	CREATE TABLE IF NOT EXISTS district_en (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		zipcode3 TEXT NOT NULL,
+		chinese TEXT NOT NULL,
+		english TEXT NOT NULL,
+		UNIQUE(zipcode3, chinese)
+	);
+	CREATE INDEX IF NOT EXISTS idx_district_en_zipcode ON district_en(zipcode3);
+
+	CREATE TABLE IF NOT EXISTS village_lane_en (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		chinese TEXT NOT NULL UNIQUE,
+		english TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_village_lane_en_chinese ON village_lane_en(chinese);
 	`
 
 	_, err = db.Exec(createTableSQL)
@@ -276,6 +300,54 @@ func (d *Database) SearchByStreet(streetPattern string, limit int) ([]ZipCodeRec
 	return results, nil
 }
 
+// GetStreetEnglish returns the English translation for a Chinese street name
+func (d *Database) GetStreetEnglish(chinese string) (string, error) {
+	var english string
+	err := d.db.QueryRow("SELECT english FROM street_en WHERE chinese = ?", chinese).Scan(&english)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return english, err
+}
+
+// GetDistrictEnglish returns the English translation for a Chinese district
+func (d *Database) GetDistrictEnglish(zipcode3 string) (string, error) {
+	var english string
+	err := d.db.QueryRow("SELECT english FROM district_en WHERE zipcode3 = ?", zipcode3).Scan(&english)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return english, err
+}
+
+// GetVillageLaneEnglish returns the English translation for village/lane names
+func (d *Database) GetVillageLaneEnglish(chinese string) (string, error) {
+	var english string
+	err := d.db.QueryRow("SELECT english FROM village_lane_en WHERE chinese = ?", chinese).Scan(&english)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return english, err
+}
+
+// InsertStreetEnglish inserts a street name translation
+func (d *Database) InsertStreetEnglish(tx *sql.Tx, chinese, english string) error {
+	_, err := tx.Exec(`INSERT OR IGNORE INTO street_en (chinese, english) VALUES (?, ?)`, chinese, english)
+	return err
+}
+
+// InsertDistrictEnglish inserts a district translation
+func (d *Database) InsertDistrictEnglish(tx *sql.Tx, zipcode3, chinese, english string) error {
+	_, err := tx.Exec(`INSERT OR IGNORE INTO district_en (zipcode3, chinese, english) VALUES (?, ?, ?)`, zipcode3, chinese, english)
+	return err
+}
+
+// InsertVillageLaneEnglish inserts a village/lane translation
+func (d *Database) InsertVillageLaneEnglish(tx *sql.Tx, chinese, english string) error {
+	_, err := tx.Exec(`INSERT OR IGNORE INTO village_lane_en (chinese, english) VALUES (?, ?)`, chinese, english)
+	return err
+}
+
 // SearchByStreetAndDistrict searches for records by street and optional district
 func (d *Database) SearchByStreetAndDistrict(streetPattern, city, district string, limit int) ([]ZipCodeRecord, error) {
 	var conditions []string
@@ -285,12 +357,13 @@ func (d *Database) SearchByStreetAndDistrict(streetPattern, city, district strin
 	args = append(args, "%"+streetPattern+"%")
 
 	if city != "" {
-		conditions = append(conditions, "city = ?")
-		args = append(args, city)
+		conditions = append(conditions, "city LIKE ?")
+		args = append(args, "%"+city+"%")
 	}
 	if district != "" {
-		conditions = append(conditions, "district = ?")
-		args = append(args, district)
+		// Use LIKE for fuzzy matching (e.g., 竹東鎮 matches 竹東鎮)
+		conditions = append(conditions, "district LIKE ?")
+		args = append(args, "%"+district+"%")
 	}
 
 	whereClause := "WHERE " + conditions[0]

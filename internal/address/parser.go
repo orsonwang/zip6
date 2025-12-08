@@ -9,19 +9,20 @@ import (
 
 // ParsedAddress represents a parsed Taiwan address
 type ParsedAddress struct {
-	City       string // 縣市
-	District   string // 區域
-	Street     string // 路/街名
-	Section    string // 段 (一段、二段...)
-	Lane       int    // 巷
-	Alley      int    // 弄
-	Number     int    // 號
-	Floor      int    // 樓
-	Room       string // 室
-	SubNumber  int    // 之X號
-	IsOdd      bool   // 單號
-	IsEven     bool   // 雙號
-	Raw        string // 原始輸入
+	City         string // 縣市
+	District     string // 區域
+	Street       string // 路/街名
+	Section      string // 段 (一段、二段...)
+	Lane         int    // 巷
+	Alley        int    // 弄
+	Number       int    // 號
+	NumberSuffix string // 之X (e.g., 之1, 之2)
+	Floor        int    // 樓
+	Room         int    // 室 (e.g., 501室)
+	SubNumber    int    // 之X號 (deprecated, use NumberSuffix)
+	IsOdd        bool   // 單號
+	IsEven       bool   // 雙號
+	Raw          string // 原始輸入
 }
 
 // ScopeRange represents a parsed scope range from database
@@ -109,7 +110,8 @@ func ParseAddress(addr string) *ParsedAddress {
 		}
 	}
 
-	// Extract street name (路 or 街)
+	// Extract street name (路, 街, 大道, 公路, 莊, 村, 坑, 寮, 厝, 埔, 坪, 灣, etc.)
+	// First try common road suffixes
 	streetPattern := regexp.MustCompile(`([^\d]+(?:路|街|大道|公路))`)
 	if match := streetPattern.FindStringSubmatch(addr); match != nil {
 		street := match[1]
@@ -130,6 +132,14 @@ func ParseAddress(addr string) *ParsedAddress {
 		parsed.Street = street
 	}
 
+	// If no street found, try village/settlement names (莊, 村, 坑, 寮, 厝, 埔, 坪, 灣, 崙, 窩, etc.)
+	if parsed.Street == "" {
+		villagePattern := regexp.MustCompile(`([^\d\s]+(?:莊|村|坑|寮|厝|埔|坪|灣|崙|窩|嶺|園|圍|底|頂|腳|尾|頭|角|口|井|塘|洲|洋|湖|潭|溪|溝|港|澳|山|嶼|島))`)
+		if match := villagePattern.FindStringSubmatch(addr); match != nil {
+			parsed.Street = match[1]
+		}
+	}
+
 	// Extract lane (巷)
 	if match := lanePattern.FindStringSubmatch(addr); match != nil {
 		parsed.Lane, _ = strconv.Atoi(match[1])
@@ -145,9 +155,10 @@ func ParseAddress(addr string) *ParsedAddress {
 		parsed.Number, _ = strconv.Atoi(match[1])
 	}
 
-	// Extract sub-number (之X)
+	// Extract sub-number (之X) - stored as NumberSuffix
 	if match := subNumberPattern.FindStringSubmatch(addr); match != nil {
 		parsed.SubNumber, _ = strconv.Atoi(match[1])
+		parsed.NumberSuffix = "之" + match[1]
 	}
 
 	// Extract floor (樓)
@@ -155,9 +166,16 @@ func ParseAddress(addr string) *ParsedAddress {
 		parsed.Floor, _ = strconv.Atoi(match[1])
 	}
 
-	// Extract room (室)
+	// Check for floor suffix like 3樓之1
+	floorSubPattern := regexp.MustCompile(`(\d+)\s*樓之(\d+)`)
+	if match := floorSubPattern.FindStringSubmatch(addr); match != nil {
+		parsed.Floor, _ = strconv.Atoi(match[1])
+		parsed.Room, _ = strconv.Atoi(match[2])
+	}
+
+	// Extract room (室) - e.g., 501室
 	if match := roomPattern.FindStringSubmatch(addr); match != nil {
-		parsed.Room = match[1]
+		parsed.Room, _ = strconv.Atoi(match[1])
 	}
 
 	// Determine odd/even
@@ -315,8 +333,9 @@ func MatchAddress(addr *ParsedAddress, scope *ScopeRange) bool {
 	// Handle number matching
 	num := addr.Number
 	if num == 0 {
-		// No number specified, consider it a match if scope is "all"
-		return scope.Type == "all"
+		// No number specified, consider it a match for any scope
+		// (user just searching by street name without specific number)
+		return true
 	}
 
 	switch scope.Type {
