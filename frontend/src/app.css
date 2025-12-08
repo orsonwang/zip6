@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+.search-highlight {
+  @apply bg-yellow-200 dark:bg-yellow-700 rounded px-0.5;
+}
+
+/* Scrollable table body */
+.table-container {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+}
+
+/* Fixed header */
+.table-fixed-header thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}

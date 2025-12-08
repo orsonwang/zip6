@@ -1,0 +1,41 @@
+# Build output
+build/bin/
+
+# Database
+*.db
+
+# Excel data files
+*.xls
+*.xlsx
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wails
+frontend/dist/
+frontend/wailsjs/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+
+# Temp
+nul

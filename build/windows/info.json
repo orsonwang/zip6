@@ -1,0 +1,15 @@
+{
+  "fixed": {
+    "file_version": "1.0.0.0"
+  },
+  "info": {
+    "0000": {
+      "ProductVersion": "1.0.0",
+      "CompanyName": "",
+      "FileDescription": "台灣郵遞區號查詢工具",
+      "LegalCopyright": "",
+      "ProductName": "郵遞區號查詢",
+      "Comments": "Built with Wails (https://wails.io)"
+    }
+  }
+}
