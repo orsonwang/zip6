@@ -7,11 +7,30 @@
 ## 技術棧
 
 - **後端**: Go + Wails v2
-- **前端**: Preact + Tailwind CSS + DaisyUI
-- **資料庫**: SQLite（內嵌於應用程式）
+- **前端**: Preact + Tailwind CSS + DaisyUI v4
+- **資料庫**: SQLite（使用 `modernc.org/sqlite`，純 Go 實作，無需 CGO）
 - **資料來源**: 中華郵政郵遞區號簿 Excel 檔案（2504A + 2504B）
 
+## 已實作功能
+
+### 核心功能
+
+- [x] 地址搜尋與郵遞區號查詢
+- [x] 地址解析器（支援路、街、大道、莊、村等 30+ 種地名結尾）
+- [x] 投遞範圍（scope）智慧匹配（單雙號、號碼範圍、巷弄範圍）
+- [x] 英文地址翻譯（完全匹配時顯示）
+- [x] 主題切換（亮色/暗色）
+
+### 英文翻譯功能
+
+- 街路名稱中英對照（30,030 筆）
+- 鄉鎮市區中英對照（371 筆）
+- 村里文字巷中英對照（8,369 筆）
+- 支援樓層格式：3樓 → 3F、3樓之1 → 3F-1、501室 → Rm. 501
+
 ## 資料結構
+
+### 主資料表 (zipcode)
 
 來源 Excel 檔案包含以下欄位：
 - 縣市
@@ -23,6 +42,12 @@
 - 大宗戶或不按址投遞註記
 
 總資料筆數約 80,000 筆（A 檔 65,534 筆 + B 檔 14,327 筆）
+
+### 英文翻譯資料表
+
+- `street_en` - 街路名稱中英對照
+- `district_en` - 鄉鎮市區中英對照（含 zipcode3 前三碼）
+- `village_lane_en` - 村里文字巷中英對照
 
 ---
 
@@ -43,21 +68,25 @@ zip6/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── SearchBox.jsx      # 搜尋輸入元件
-│   │   │   ├── ResultTable.jsx    # 結果表格元件
-│   │   │   └── ThemeToggle.jsx    # 主題切換元件
-│   │   ├── app.jsx                # 主應用程式
-│   │   ├── app.css                # Tailwind 入口
-│   │   └── main.jsx               # Preact 入口
+│   │   │   ├── SearchBox.jsx         # 搜尋輸入元件
+│   │   │   ├── AddressResultTable.jsx # 地址結果表格元件
+│   │   │   └── ThemeToggle.jsx       # 主題切換元件
+│   │   ├── app.jsx                   # 主應用程式
+│   │   ├── app.css                   # Tailwind 入口
+│   │   └── main.jsx                  # Preact 入口
 │   ├── index.html
 │   ├── package.json
 │   ├── tailwind.config.js
 │   └── postcss.config.js
 ├── internal/
+│   ├── address/
+│   │   ├── parser.go                 # 地址解析器
+│   │   └── translator.go             # 英文地址翻譯器
 │   └── database/
-│       └── database.go            # SQLite 操作封裝
+│       └── database.go               # SQLite 操作封裝
 ├── scripts/
-│   └── import_excel.go            # Excel 匯入腳本（獨立執行）
+│   ├── import_excel.go               # 郵遞區號 Excel 匯入腳本
+│   └── import_english.go             # 英文翻譯 Excel 匯入腳本
 ├── app.go                         # Wails 綁定方法
 ├── main.go                        # 程式入口
 ├── zipcode.db                     # SQLite 資料庫（由匯入腳本產生）
@@ -72,7 +101,7 @@ zip6/
 ### 3.1 go.mod 額外依賴
 
 ```bash
-go get github.com/mattn/go-sqlite3
+go get modernc.org/sqlite      # 純 Go SQLite（無需 CGO）
 go get github.com/xuri/excelize/v2
 ```
 
@@ -425,17 +454,38 @@ wails build -platform linux/amd64
 
 1. **中文編碼** - 確保 Excel 讀取時使用正確編碼
 2. **SQLite 中文排序** - 可能需要設定 COLLATE
-3. **CGO** - go-sqlite3 需要 CGO，Windows 需安裝 gcc（建議用 mingw-w64）
+3. **純 Go SQLite** - 使用 `modernc.org/sqlite`，無需 CGO 和 gcc
 4. **首次查詢效能** - 可在啟動時預熱資料庫連線
+5. **DaisyUI v4** - 使用 v4 版本，部分 class 與 v3 不同（如 input-group 已移除）
 
 ---
 
 ## 驗收標準
 
-- [ ] 可輸入關鍵字進行模糊查詢
-- [ ] 查詢結果正確顯示於表格
-- [ ] 關鍵字高亮顯示
-- [ ] 支援跨欄位搜尋（輸入「中正」可找到縣市、區域、路名含此關鍵字的所有結果）
-- [ ] 主題切換正常運作
+- [x] 可輸入關鍵字進行模糊查詢
+- [x] 查詢結果正確顯示於表格
+- [x] 關鍵字高亮顯示
+- [x] 支援跨欄位搜尋（輸入「中正」可找到縣市、區域、路名含此關鍵字的所有結果）
+- [x] 主題切換正常運作
+- [x] 英文地址翻譯（完全匹配時顯示）
 - [ ] 可成功打包為單一執行檔
 - [ ] 執行檔體積 < 20MB
+
+---
+
+## 匯入腳本使用說明
+
+### 匯入郵遞區號資料
+
+```bash
+go run scripts/import_excel.go -excel "2504A.xlsx,2504B.xlsx" -db "zipcode.db"
+```
+
+### 匯入英文翻譯資料
+
+```bash
+go run scripts/import_english.go -db "zipcode.db" \
+  -street "中英文街路名稱對照檔1130401.xlsx" \
+  -district "鄉鎮市區中英對照.xlsx" \
+  -village "村里文字巷中英對照.xlsx"
+```
