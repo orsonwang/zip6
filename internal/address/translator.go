@@ -207,3 +207,206 @@ func TranslateFloorRoom(floor, room int, roomSuffix string) string {
 
 	return strings.Join(parts, ", ")
 }
+
+// HanyuToTongyong converts Hanyu Pinyin to Tongyong Pinyin
+// Main differences:
+// - zh → jh (e.g., Zhongshan → Jhongshan)
+// - x → s (e.g., Xinyi → Sinyi)
+// - q → c (e.g., Qixian → Cisian)
+// - c → ts (e.g., Cixin → Tsisin)
+// - shi → shih, chi → chih, zhi → jhih, ri → rih
+// - si → sih, zi → zih, ci → tsih
+// - iu → iou (e.g., Liu → Liou)
+// - Special ending conversions
+func HanyuToTongyong(hanyu string) string {
+	if hanyu == "" {
+		return ""
+	}
+
+	result := hanyu
+
+	// Skip phrases that should not be converted (must check before word splitting)
+	skipPhrases := map[string]string{
+		"Taiwan (R.O.C.)": "___TAIWAN_ROC___",
+	}
+	for phrase, placeholder := range skipPhrases {
+		result = strings.ReplaceAll(result, phrase, placeholder)
+	}
+
+	// Process word by word to handle capitalization
+	words := strings.Split(result, " ")
+	for i, word := range words {
+		// Skip placeholder words
+		isPlaceholder := false
+		for _, placeholder := range skipPhrases {
+			if word == placeholder {
+				isPlaceholder = true
+				break
+			}
+		}
+		if isPlaceholder {
+			continue
+		}
+		words[i] = convertWordToTongyong(word)
+	}
+
+	result = strings.Join(words, " ")
+
+	// Restore skipped phrases
+	for phrase, placeholder := range skipPhrases {
+		result = strings.ReplaceAll(result, placeholder, phrase)
+	}
+
+	return result
+}
+
+// convertWordToTongyong converts a single word from Hanyu to Tongyong Pinyin
+func convertWordToTongyong(word string) string {
+	if word == "" {
+		return ""
+	}
+
+	// Skip non-pinyin words (numbers, abbreviations, etc.)
+	if !containsLetter(word) {
+		return word
+	}
+
+	// Handle words with punctuation (e.g., "Rd.", "St.", "(R.O.C.)")
+	prefix := ""
+	suffix := ""
+	for strings.HasPrefix(word, "(") {
+		prefix = prefix + word[:1]
+		word = word[1:]
+	}
+	for strings.HasSuffix(word, ".") || strings.HasSuffix(word, ",") || strings.HasSuffix(word, ")") {
+		suffix = word[len(word)-1:] + suffix
+		word = word[:len(word)-1]
+	}
+
+	// Skip common English words that shouldn't be converted
+	skipWords := map[string]bool{
+		"Rd": true, "St": true, "Ln": true, "Aly": true, "Sec": true,
+		"No": true, "Rm": true, "F": true, "Dist": true, "City": true,
+		"Taiwan": true, "R": true, "O": true, "C": true, "N": true,
+		"S": true, "E": true, "W": true, "and": true, "the": true,
+		"New": true, "Vil": true, "Village": true, "Township": true,
+		"ROC": true,
+	}
+	if skipWords[word] {
+		return prefix + word + suffix
+	}
+
+	// Check if first letter is uppercase
+	isCapitalized := len(word) > 0 && word[0] >= 'A' && word[0] <= 'Z'
+
+	// Convert to lowercase for processing
+	lower := strings.ToLower(word)
+
+	// Apply Tongyong Pinyin conversions (order matters!)
+	// Handle special syllable endings first
+	conversions := []struct {
+		from string
+		to   string
+	}{
+		// Special syllable patterns (longer patterns first)
+		{"zhi", "jhih"},
+		{"chi", "chih"},
+		{"shi", "shih"},
+		{"ri", "rih"},
+		{"zi", "zih"},
+		{"ci", "tsih"},
+		{"si", "sih"},
+
+		// Consonant clusters
+		{"zh", "jh"},
+
+		// iu → iou (but not after q/j/x which become c/j/s)
+		{"niu", "niou"},
+		{"liu", "liou"},
+		{"diu", "diou"},
+		{"miu", "miou"},
+
+		// x → s (before vowels)
+		{"xia", "sia"},
+		{"xian", "sian"},
+		{"xiang", "siang"},
+		{"xiao", "siao"},
+		{"xie", "sie"},
+		{"xin", "sin"},
+		{"xing", "sing"},
+		{"xiong", "siong"},
+		{"xiu", "siou"},
+		{"xu", "syu"},
+		{"xuan", "syuan"},
+		{"xue", "syue"},
+		{"xun", "syun"},
+
+		// q → c (before vowels)
+		{"qia", "cia"},
+		{"qian", "cian"},
+		{"qiang", "ciang"},
+		{"qiao", "ciao"},
+		{"qie", "cie"},
+		{"qin", "cin"},
+		{"qing", "cing"},
+		{"qiong", "ciong"},
+		{"qiu", "ciou"},
+		{"qu", "cyu"},
+		{"quan", "cyuan"},
+		{"que", "cyue"},
+		{"qun", "cyun"},
+
+		// c → ts (before vowels, but not in ch)
+		{"cai", "tsai"},
+		{"can", "tsan"},
+		{"cang", "tsang"},
+		{"cao", "tsao"},
+		{"ce", "tse"},
+		{"cen", "tsen"},
+		{"ceng", "tseng"},
+		{"cou", "tsou"},
+		{"cu", "tsu"},
+		{"cuan", "tsuan"},
+		{"cui", "tsuei"},
+		{"cun", "tsun"},
+		{"cuo", "tsuo"},
+
+		// ü related (after j, q, x, y the u is actually ü)
+		{"ju", "jyu"},
+		{"juan", "jyuan"},
+		{"jue", "jyue"},
+		{"jun", "jyun"},
+		{"yu", "yu"}, // yu stays the same
+		{"yue", "yue"},
+		{"yuan", "yuan"},
+		{"yun", "yun"},
+
+		// nü, lü
+		{"nv", "nyu"},
+		{"lv", "lyu"},
+
+		// ong after certain consonants
+		// These generally stay the same in Tongyong
+	}
+
+	for _, conv := range conversions {
+		lower = strings.ReplaceAll(lower, conv.from, conv.to)
+	}
+
+	// Restore capitalization
+	if isCapitalized && len(lower) > 0 {
+		lower = strings.ToUpper(string(lower[0])) + lower[1:]
+	}
+
+	return prefix + lower + suffix
+}
+
+// containsLetter checks if a string contains at least one letter
+func containsLetter(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return false
+}

@@ -39,10 +39,11 @@ type AddressSearchResult struct {
 
 // AddressSearchResponse represents the response from address search
 type AddressSearchResponse struct {
-	ParsedAddress  string                `json:"parsedAddress"`
-	EnglishAddress string                `json:"englishAddress"`
-	Results        []AddressSearchResult `json:"results"`
-	BestMatch      *AddressSearchResult  `json:"bestMatch"`
+	ParsedAddress   string                `json:"parsedAddress"`
+	EnglishAddress  string                `json:"englishAddress"`
+	TongyongAddress string                `json:"tongyongAddress"`
+	Results         []AddressSearchResult `json:"results"`
+	BestMatch       *AddressSearchResult  `json:"bestMatch"`
 }
 
 func main() {
@@ -175,6 +176,8 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	if bestMatch != nil {
 		translator := address.NewTranslator(db)
 		response.EnglishAddress = translator.TranslateAddress(parsed, bestMatchZipcode)
+		// Convert Hanyu Pinyin to Tongyong Pinyin
+		response.TongyongAddress = address.HanyuToTongyong(response.EnglishAddress)
 	}
 
 	// Limit results
