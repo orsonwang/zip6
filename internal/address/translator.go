@@ -61,8 +61,14 @@ func (t *Translator) TranslateAddress(parsed *ParsedAddress, zipcode string) str
 		parts = append(parts, laneStr)
 	}
 
-	// Section (e.g., Sec. 1)
-	if parsed.Section != "" {
+	// Street name (translate first to check if section is already included)
+	var streetEn string
+	if parsed.Street != "" {
+		streetEn = t.translateStreet(parsed.Street, parsed.Section)
+	}
+
+	// Section (e.g., Sec. 1) - only add if not already in street translation
+	if parsed.Section != "" && !strings.Contains(streetEn, "Sec.") {
 		secNum := t.extractSectionNumber(parsed.Section)
 		if secNum > 0 {
 			parts = append(parts, fmt.Sprintf("Sec. %d", secNum))
@@ -70,8 +76,7 @@ func (t *Translator) TranslateAddress(parsed *ParsedAddress, zipcode string) str
 	}
 
 	// Street name
-	if parsed.Street != "" {
-		streetEn := t.translateStreet(parsed.Street)
+	if streetEn != "" {
 		parts = append(parts, streetEn)
 	}
 
@@ -96,11 +101,21 @@ func (t *Translator) TranslateAddress(parsed *ParsedAddress, zipcode string) str
 }
 
 // translateStreet translates street name from Chinese to English
-func (t *Translator) translateStreet(chinese string) string {
+func (t *Translator) translateStreet(chinese string, section string) string {
 	// Try exact match first
 	english, err := t.db.GetStreetEnglish(chinese)
 	if err == nil && english != "" {
 		return english
+	}
+
+	// Try with section appended (e.g., "基隆路" + "二段" = "基隆路二段")
+	// Database may have entries like "基隆路一段", "基隆路二段" etc.
+	if section != "" {
+		streetWithSection := chinese + section
+		english, err := t.db.GetStreetEnglish(streetWithSection)
+		if err == nil && english != "" {
+			return english
+		}
 	}
 
 	// Try without section (一段, 二段, etc.)
