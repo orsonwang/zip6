@@ -367,6 +367,183 @@ func MatchAddress(addr *ParsedAddress, scope *ScopeRange) bool {
 	return false
 }
 
+// Arabic to Chinese numeral mapping for section names (1段 → 一段)
+var arabicToChineseSection = map[string]string{
+	"1段": "一段", "2段": "二段", "3段": "三段", "4段": "四段", "5段": "五段",
+	"6段": "六段", "7段": "七段", "8段": "八段", "9段": "九段", "10段": "十段",
+}
+
+// Chinese numeral to Arabic mapping for numbers (一 → 1, 二 → 2, etc.)
+var chineseToArabic = map[rune]int{
+	'零': 0, '〇': 0,
+	'一': 1, '壹': 1,
+	'二': 2, '貳': 2, '兩': 2,
+	'三': 3, '參': 3,
+	'四': 4, '肆': 4,
+	'五': 5, '伍': 5,
+	'六': 6, '陸': 6,
+	'七': 7, '柒': 7,
+	'八': 8, '捌': 8,
+	'九': 9, '玖': 9,
+	'十': 10, '拾': 10,
+	'百': 100, '佰': 100,
+}
+
+// parseChineseNumber converts a Chinese number string to Arabic number
+// Supports two formats:
+// 1. Traditional: 一, 十, 十一, 二十, 二十一, 一百, 一百二十三, etc.
+// 2. Consecutive: 二二六 (226), 一一 (11), 五六 (56), etc.
+func parseChineseNumber(s string) (int, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+
+	runes := []rune(s)
+
+	// Check if it contains positional characters (十, 百, 拾, 佰)
+	hasPositional := false
+	for _, r := range runes {
+		if r == '十' || r == '拾' || r == '百' || r == '佰' {
+			hasPositional = true
+			break
+		}
+	}
+
+	// If no positional characters, treat as consecutive digits (二二六 = 226)
+	if !hasPositional {
+		return parseConsecutiveChineseNumber(runes)
+	}
+
+	// Traditional parsing with positional characters
+	result := 0
+	temp := 0
+	hasNumber := false
+	hundredPart := 0
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if val, ok := chineseToArabic[r]; ok {
+			hasNumber = true
+			if r == '百' || r == '佰' {
+				if temp == 0 {
+					temp = 1
+				}
+				hundredPart = temp * 100
+				temp = 0
+			} else if r == '十' || r == '拾' {
+				if temp == 0 {
+					temp = 1 // 十 means 10, 十一 means 11
+				}
+				result += temp * 10
+				temp = 0
+			} else {
+				temp = val
+			}
+		}
+	}
+	result += temp + hundredPart
+
+	return result, hasNumber
+}
+
+// parseConsecutiveChineseNumber parses consecutive Chinese digits like 二二六 = 226
+func parseConsecutiveChineseNumber(runes []rune) (int, bool) {
+	result := 0
+	hasNumber := false
+
+	for _, r := range runes {
+		if val, ok := chineseToArabic[r]; ok {
+			// Only accept single digits (0-9) for consecutive format
+			if val <= 9 {
+				hasNumber = true
+				result = result*10 + val
+			}
+		}
+	}
+
+	return result, hasNumber
+}
+
+// convertChineseNumbersInAddress converts Chinese numbers to Arabic in specific contexts
+// e.g., 一號 → 1號, 十二巷 → 12巷, 一樓 → 1樓, 一樓之一 → 1樓之1
+func convertChineseNumbersInAddress(addr string) string {
+	// Patterns for Chinese numbers followed by address units
+	// Order matters: longer patterns first
+	patterns := []struct {
+		suffix string
+		regex  *regexp.Regexp
+	}{
+		{"樓之", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)樓之([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)`)},
+		{"號之", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)號之([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)`)},
+		{"號", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)號`)},
+		{"巷", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)巷`)},
+		{"弄", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)弄`)},
+		{"樓", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)樓`)},
+		{"室", regexp.MustCompile(`([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)室`)},
+		{"之", regexp.MustCompile(`之([零〇一二三四五六七八九十百壹貳參肆伍陸柒捌玖拾兩]+)`)},
+	}
+
+	result := addr
+
+	// Handle 樓之X pattern first (e.g., 三樓之一 → 3樓之1)
+	floorSubPattern := patterns[0]
+	result = floorSubPattern.regex.ReplaceAllStringFunc(result, func(match string) string {
+		subMatches := floorSubPattern.regex.FindStringSubmatch(match)
+		if len(subMatches) >= 3 {
+			floor, ok1 := parseChineseNumber(subMatches[1])
+			sub, ok2 := parseChineseNumber(subMatches[2])
+			if ok1 && ok2 {
+				return strconv.Itoa(floor) + "樓之" + strconv.Itoa(sub)
+			}
+		}
+		return match
+	})
+
+	// Handle 號之X pattern (e.g., 十號之一 → 10號之1)
+	numSubPattern := patterns[1]
+	result = numSubPattern.regex.ReplaceAllStringFunc(result, func(match string) string {
+		subMatches := numSubPattern.regex.FindStringSubmatch(match)
+		if len(subMatches) >= 3 {
+			num, ok1 := parseChineseNumber(subMatches[1])
+			sub, ok2 := parseChineseNumber(subMatches[2])
+			if ok1 && ok2 {
+				return strconv.Itoa(num) + "號之" + strconv.Itoa(sub)
+			}
+		}
+		return match
+	})
+
+	// Handle other patterns
+	for _, p := range patterns[2:] {
+		if p.suffix == "之" {
+			// Special handling for standalone 之X
+			result = p.regex.ReplaceAllStringFunc(result, func(match string) string {
+				subMatches := p.regex.FindStringSubmatch(match)
+				if len(subMatches) >= 2 {
+					num, ok := parseChineseNumber(subMatches[1])
+					if ok {
+						return "之" + strconv.Itoa(num)
+					}
+				}
+				return match
+			})
+		} else {
+			result = p.regex.ReplaceAllStringFunc(result, func(match string) string {
+				subMatches := p.regex.FindStringSubmatch(match)
+				if len(subMatches) >= 2 {
+					num, ok := parseChineseNumber(subMatches[1])
+					if ok {
+						return strconv.Itoa(num) + p.suffix
+					}
+				}
+				return match
+			})
+		}
+	}
+
+	return result
+}
+
 // normalizeAddress normalizes address string
 func normalizeAddress(addr string) string {
 	// Replace full-width characters with half-width
@@ -391,6 +568,14 @@ func normalizeAddress(addr string) string {
 	s = strings.ReplaceAll(s, "台中", "臺中")
 	s = strings.ReplaceAll(s, "台南", "臺南")
 	s = strings.ReplaceAll(s, "台東", "臺東")
+
+	// Convert Arabic numerals to Chinese for section names (1段 → 一段)
+	for arabic, chinese := range arabicToChineseSection {
+		s = strings.ReplaceAll(s, arabic, chinese)
+	}
+
+	// Convert Chinese numerals to Arabic for numbers (一號 → 1號, 一樓之一 → 1樓之1)
+	s = convertChineseNumbersInAddress(s)
 
 	return s
 }

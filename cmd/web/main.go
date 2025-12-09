@@ -14,6 +14,13 @@ import (
 	"zip6/internal/database"
 )
 
+// Version info - set at build time using ldflags
+var (
+	Version     = "dev"
+	BuildDate   = "unknown"
+	DataVersion = "2504" // 郵遞區號資料版本 (年月)
+)
+
 //go:embed static
 var staticFiles embed.FS
 
@@ -46,6 +53,7 @@ func main() {
 
 	// API routes
 	http.HandleFunc("/api/search", handleSearch)
+	http.HandleFunc("/api/version", handleVersion)
 
 	// Serve static files
 	staticFS, err := fs.Sub(staticFiles, "static")
@@ -61,6 +69,15 @@ func main() {
 
 	fmt.Printf("Server starting at http://localhost:%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"version":     Version,
+		"buildDate":   BuildDate,
+		"dataVersion": DataVersion,
+	})
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
