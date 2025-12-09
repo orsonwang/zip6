@@ -89,7 +89,7 @@
 
             <!-- Footer -->
             <div class="mt-4 text-center text-xs text-base-content/50">
-                <span id="versionInfo">載入中...</span>
+                <span id="versionInfo">{{VERSION_INFO}}</span>
             </div>
         </div>
     </div>
@@ -214,18 +214,6 @@
             return text.replace(regex, '<span class="highlight">$1</span>');
         }
 
-        // Load version info
-        async function loadVersion() {
-            try {
-                const response = await fetch('/api/version');
-                const data = await response.json();
-                document.getElementById('versionInfo').textContent =
-                    `v${data.version} (${data.buildDate}) | 資料版本: ${data.dataVersion}`;
-            } catch (err) {
-                document.getElementById('versionInfo').textContent = '';
-            }
-        }
-        loadVersion();
     </script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"zip6/internal/address"
 	"zip6/internal/database"
@@ -53,14 +54,29 @@ func main() {
 
 	// API routes
 	http.HandleFunc("/api/search", handleSearch)
-	http.HandleFunc("/api/version", handleVersion)
 
-	// Serve static files
+	// Serve static files with version injection for index.html
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.Handle("/", http.FileServer(http.FS(staticFS)))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Serve index.html with version info injected
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			indexData, err := fs.ReadFile(staticFiles, "static/index.html")
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			versionInfo := fmt.Sprintf("v%s (%s) | 資料版本: %s", Version, BuildDate, DataVersion)
+			content := strings.Replace(string(indexData), "{{VERSION_INFO}}", versionInfo, 1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(content))
+			return
+		}
+		// Serve other static files
+		http.FileServer(http.FS(staticFS)).ServeHTTP(w, r)
+	})
 
 	port := "8080"
 	if p := os.Getenv("PORT"); p != "" {
@@ -69,15 +85,6 @@ func main() {
 
 	fmt.Printf("Server starting at http://localhost:%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
-}
-
-func handleVersion(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"version":     Version,
-		"buildDate":   BuildDate,
-		"dataVersion": DataVersion,
-	})
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
