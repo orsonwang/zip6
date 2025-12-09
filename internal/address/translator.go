@@ -103,6 +103,18 @@ func (t *Translator) translateStreet(chinese string) string {
 		return english
 	}
 
+	// Try without section (一段, 二段, etc.)
+	// Street name in parsed result may include section like "基隆路二段"
+	// but database only has "基隆路"
+	sectionPattern := regexp.MustCompile(`([一二三四五六七八九十]+段)$`)
+	if sectionPattern.MatchString(chinese) {
+		baseStreet := sectionPattern.ReplaceAllString(chinese, "")
+		english, err := t.db.GetStreetEnglish(baseStreet)
+		if err == nil && english != "" {
+			return english
+		}
+	}
+
 	// Try without suffixes (路, 街, 大道, etc.)
 	suffixes := []string{"路", "街", "大道", "巷", "弄"}
 	for _, suffix := range suffixes {
